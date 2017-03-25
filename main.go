@@ -1,43 +1,45 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	url = "http://localhost:3000/user/signup"
+	url = "http://104.199.219.138:8080/"
 )
 
+var count int64
+
 func main() {
+	n := flag.Int("n", 100, "loop count, default 100")
+	flag.Parse()
+
 	t1 := time.Now()
 
-	usernameCh := make(chan string)
 	errCh := make(chan *error)
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < 1000; i++ {
+	if *n <= 0 {
+		*n = 100
+	}
+
+	for i := 0; i < *n; i++ {
 		wg.Add(1)
 
-		username := fmt.Sprintf("user%03d", i)
-		password := fmt.Sprintf("secret%03d", i)
-		email := fmt.Sprintf("%s@email.com", username)
-
-		go register(username, password, email, &wg, usernameCh, errCh)
+		go getRoot(&wg, errCh)
 	}
 
 	go func() {
 		for {
 			select {
-			case r := <-usernameCh:
-				log.Printf("%s OK\n", r)
 			case e := <-errCh:
-				log.Printf("register error: %v\n", e)
+				log.Printf("get root error: %v\n", *e)
 			}
 		}
 	}()
@@ -46,31 +48,28 @@ func main() {
 
 	t2 := time.Now()
 	fmt.Printf("Time: %fs\n", t2.Sub(t1).Seconds())
+	fmt.Printf("%d of %d success\n", count, *n)
 }
 
-func register(username, password, email string, wg *sync.WaitGroup, usernameCh chan string, errCh chan *error) {
+func getRoot(wg *sync.WaitGroup, errCh chan *error) {
 	defer wg.Done()
 
-	params := fmt.Sprintf("username=%s&email=%s&password=%s", username, email, password)
-	payload := strings.NewReader(params)
-
-	req, err := http.NewRequest("POST", url, payload)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		errCh <- &err
 		return
 	}
 
-	req.Header.Add("content-type", "application/x-www-form-urlencoded")
-	req.Header.Add("cache-control", "no-cache")
+	req.Close = true
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		errCh <- &err
 		return
-	}
 
+	}
 	defer res.Body.Close()
 
-	usernameCh <- username
+	count++
 	return
 }
